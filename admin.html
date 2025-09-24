@@ -5,52 +5,164 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>VetGuard Admin</title>
     <style>
-        body { font-family: Arial, sans-serif; margin: 20px; }
-        .section { margin-bottom: 30px; }
+        body { font-family: Arial, sans-serif; margin: 20px; background: #f5f5f5; }
+        .login-container { 
+            max-width: 400px; 
+            margin: 100px auto; 
+            padding: 30px; 
+            background: white; 
+            border-radius: 10px; 
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1); 
+            text-align: center; 
+        }
+        .admin-panel { display: none; }
+        .section { margin-bottom: 30px; background: white; padding: 20px; border-radius: 8px; }
         table { width: 100%; border-collapse: collapse; margin-top: 10px; }
         th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }
         th { background-color: #f2f2f2; }
-        button { margin: 5px; padding: 5px 10px; }
+        button { margin: 5px; padding: 8px 15px; background: #00796b; color: white; border: none; border-radius: 4px; cursor: pointer; }
+        button:hover { background: #005a4f; }
+        input { 
+            width: 100%; 
+            padding: 10px; 
+            margin: 10px 0; 
+            border: 1px solid #ddd; 
+            border-radius: 4px; 
+            box-sizing: border-box; 
+        }
+        .error { color: red; margin-top: 10px; }
+        .logout-btn { background: #ff5722; float: right; }
+        .logout-btn:hover { background: #e64a19; }
     </style>
 </head>
 <body>
-    <h1>VetGuard Solutions Admin Panel</h1>
-    
-    <div class="section">
-        <h2>Appointments <button onclick="loadAppointments()">Refresh</button></h2>
-        <table id="appointments-table">
-            <thead>
-                <tr>
-                    <th>Name</th>
-                    <th>Email</th>
-                    <th>Phone</th>
-                    <th>Service</th>
-                    <th>Date</th>
-                    <th>Message</th>
-                    <th>Timestamp</th>
-                </tr>
-            </thead>
-            <tbody></tbody>
-        </table>
+    <!-- Login Form -->
+    <div id="loginContainer" class="login-container">
+        <h2>VetGuard Admin Login</h2>
+        <form id="loginForm">
+            <input type="password" id="password" placeholder="Enter Admin Password" required>
+            <button type="submit">Login</button>
+        </form>
+        <div id="loginError" class="error"></div>
     </div>
-    
-    <div class="section">
-        <h2>Newsletter Subscribers <button onclick="loadSubscribers()">Refresh</button></h2>
-        <table id="subscribers-table">
-            <thead>
-                <tr>
-                    <th>Email</th>
-                </tr>
-            </thead>
-            <tbody></tbody>
-        </table>
+
+    <!-- Admin Panel (hidden until authenticated) -->
+    <div id="adminPanel" class="admin-panel">
+        <button class="logout-btn" onclick="logout()">Logout</button>
+        <h1>VetGuard Solutions Admin Panel</h1>
+        
+        <div class="section">
+            <h2>Appointments <button onclick="loadAppointments()">Refresh</button></h2>
+            <table id="appointments-table">
+                <thead>
+                    <tr>
+                        <th>Name</th>
+                        <th>Email</th>
+                        <th>Phone</th>
+                        <th>Service</th>
+                        <th>Date</th>
+                        <th>Message</th>
+                        <th>Timestamp</th>
+                    </tr>
+                </thead>
+                <tbody></tbody>
+            </table>
+        </div>
+        
+        <div class="section">
+            <h2>Newsletter Subscribers <button onclick="loadSubscribers()">Refresh</button></h2>
+            <table id="subscribers-table">
+                <thead>
+                    <tr>
+                        <th>Email</th>
+                    </tr>
+                </thead>
+                <tbody></tbody>
+            </table>
+        </div>
     </div>
-    
+
     <script>
-        // Load and display data from backend
+        // Authentication functions
+        async function login(password) {
+            try {
+                const response = await fetch('/api/admin/login', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({ password })
+                });
+                
+                const result = await response.json();
+                return result;
+            } catch (error) {
+                console.error('Login error:', error);
+                return { error: 'Network error' };
+            }
+        }
+
+        function handleLoginSuccess() {
+            document.getElementById('loginContainer').style.display = 'none';
+            document.getElementById('adminPanel').style.display = 'block';
+            // Load data after successful login
+            loadAppointments();
+            loadSubscribers();
+        }
+
+        function logout() {
+            localStorage.removeItem('adminToken');
+            document.getElementById('loginContainer').style.display = 'block';
+            document.getElementById('adminPanel').style.display = 'none';
+            document.getElementById('loginForm').reset();
+        }
+
+        function checkExistingLogin() {
+            const token = localStorage.getItem('adminToken');
+            if (token) {
+                // You might want to validate the token with the backend here
+                handleLoginSuccess();
+            }
+        }
+
+        // Login form handler
+        document.getElementById('loginForm').addEventListener('submit', async function(e) {
+            e.preventDefault();
+            const password = document.getElementById('password').value;
+            const errorDiv = document.getElementById('loginError');
+            
+            const result = await login(password);
+            
+            if (result.success) {
+                localStorage.setItem('adminToken', result.token);
+                handleLoginSuccess();
+            } else {
+                errorDiv.textContent = result.error || 'Login failed';
+            }
+        });
+
+        // Modify existing functions to include authentication header
+        async function makeAuthenticatedRequest(url) {
+            const token = localStorage.getItem('adminToken');
+            const response = await fetch(url, {
+                headers: {
+                    'Authorization': `Bearer ${token}`
+                }
+            });
+            
+            if (response.status === 401) {
+                // Token expired or invalid
+                logout();
+                throw new Error('Authentication required');
+            }
+            
+            return response;
+        }
+
+        // Updated load functions with authentication
         async function loadAppointments() {
             try {
-                const response = await fetch('/api/appointments');
+                const response = await makeAuthenticatedRequest('/api/appointments');
                 const appointments = await response.json();
                 const appointmentsBody = document.querySelector('#appointments-table tbody');
                 appointmentsBody.innerHTML = '';
@@ -70,12 +182,15 @@
                 });
             } catch (error) {
                 console.error('Error loading appointments:', error);
+                if (error.message === 'Authentication required') {
+                    document.getElementById('loginError').textContent = 'Session expired. Please login again.';
+                }
             }
         }
         
         async function loadSubscribers() {
             try {
-                const response = await fetch('/api/subscribers');
+                const response = await makeAuthenticatedRequest('/api/subscribers');
                 const subscribers = await response.json();
                 const subscribersBody = document.querySelector('#subscribers-table tbody');
                 subscribersBody.innerHTML = '';
@@ -87,13 +202,15 @@
                 });
             } catch (error) {
                 console.error('Error loading subscribers:', error);
+                if (error.message === 'Authentication required') {
+                    document.getElementById('loginError').textContent = 'Session expired. Please login again.';
+                }
             }
         }
         
-        // Load data when page is ready
+        // Check for existing login when page loads
         document.addEventListener('DOMContentLoaded', function() {
-            loadAppointments();
-            loadSubscribers();
+            checkExistingLogin();
         });
     </script>
 </body>
